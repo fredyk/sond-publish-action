@@ -34,6 +34,9 @@ check(re.search(r"sondpkg(\[@\]\})?\"? publish ", r) is not None, "the step runs
 check(re.search(r'>>\s*"\$GITHUB_OUTPUT"', r) is not None, "publish's stdout becomes the step outputs")
 check(re.search(r"\b3\)", r) is not None or "-eq 3" in r or "= 3" in r, "exit 3 (already published) is accepted")
 check(re.search(r"sondpkg(\[@\]\})?\"? verify-published ", r) is not None, "the inclusion proof is verified")
+check(inputs.get("log-key", {}).get("default") == "072f2d42e0c81e0d075a50585e63bfbe74f2f8d65a0d6db2c1185f432d5a44e8", "the log key of dist.sond.dev is pinned by default")
+check(re.search(r'verify-published "\$IN_BUNDLE" --url "\$IN_URL" --log-key "\$IN_LOG_KEY"', r) is not None, "the proof is checked against the pinned log key")
+check((pub.get("env") or {}).get("IN_LOG_KEY") == "${{ inputs.log-key }}", "the key reaches the step through env")
 outs = a.get("outputs") or {}
 for o in ["object", "log_index", "tree_size"]:
     check(outs.get(o, {}).get("value") == "${{ steps.publish.outputs.%s }}" % o, f"output {o} from the publish step")

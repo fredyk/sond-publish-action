@@ -40,6 +40,7 @@ already published is never repointed to another object.
 | `token` | yes | | registry publish token, scoped to this package |
 | `signing-key` | yes | | private key file written by `sondpkg keygen` |
 | `url` | no | `https://dist.sond.dev` | registry base URL |
+| `log-key` | no | dist.sond.dev's log key | public key the inclusion proof is checked against |
 | `distro-pkg-ref` | no | `main` | branch or tag of sond-distro-pkg |
 
 ## Outputs

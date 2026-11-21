@@ -17,6 +17,9 @@ inputs:
   url:
     description: Registry base URL.
     default: https://dist.sond.dev
+  log-key:
+    description: Public Ed25519 key of the registry's transparency log (hex); the inclusion proof is checked against it, never against the key the registry serves.
+    default: 072f2d42e0c81e0d075a50585e63bfbe74f2f8d65a0d6db2c1185f432d5a44e8
   distro-pkg-ref:
     description: Branch or tag of fredyk/sond-distro-pkg that provides sondpkg.
     default: main
@@ -41,6 +44,7 @@ runs:
         IN_BUNDLE: ${{ inputs.bundle }}
         IN_URL: ${{ inputs.url }}
         IN_REF: ${{ inputs.distro-pkg-ref }}
+        IN_LOG_KEY: ${{ inputs.log-key }}
         SOND_PUBLISH_TOKEN: ${{ inputs.token }}
         SOND_SIGNING_KEY: ${{ inputs.signing-key }}
       run: |
@@ -66,4 +70,4 @@ runs:
         cat "$secrets/out" >>"$GITHUB_OUTPUT"
         rm -f "$secrets/out"
 
-        "${sondpkg[@]}" verify-published "$IN_BUNDLE" --url "$IN_URL"
+        "${sondpkg[@]}" verify-published "$IN_BUNDLE" --url "$IN_URL" --log-key "$IN_LOG_KEY"
