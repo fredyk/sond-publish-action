@@ -1,0 +1,69 @@
+name: Sond package publish
+description: Sign and publish a verified RFC-0018 bundle to a Sond registry (dist.sond.dev) and check its inclusion in the transparency log.
+branding:
+  icon: upload-cloud
+  color: gray-dark
+
+inputs:
+  bundle:
+    description: Path of the bundle directory (the bundle output of fredyk/sond-build-action).
+    required: true
+  token:
+    description: Publish token of the registry, scoped to this package (pass it from a secret).
+    required: true
+  signing-key:
+    description: The publisher's Ed25519 private key file contents, as written by `sondpkg keygen` (pass it from a secret).
+    required: true
+  url:
+    description: Registry base URL.
+    default: https://dist.sond.dev
+  distro-pkg-ref:
+    description: Branch or tag of fredyk/sond-distro-pkg that provides sondpkg.
+    default: main
+
+outputs:
+  object:
+    description: The published object, as sha256:<hex>.
+    value: ${{ steps.publish.outputs.object }}
+  log_index:
+    description: Index of the package's entry in the transparency log.
+    value: ${{ steps.publish.outputs.log_index }}
+  tree_size:
+    description: Size of the log tree the entry was checked against.
+    value: ${{ steps.publish.outputs.tree_size }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        IN_BUNDLE: ${{ inputs.bundle }}
+        IN_URL: ${{ inputs.url }}
+        IN_REF: ${{ inputs.distro-pkg-ref }}
+        SOND_PUBLISH_TOKEN: ${{ inputs.token }}
+        SOND_SIGNING_KEY: ${{ inputs.signing-key }}
+      run: |
+        # sond-build-action leaves sond-distro-pkg here; otherwise it is cloned.
+        d="$RUNNER_TEMP/sond/sond-distro-pkg"
+        [ -d "$d/.git" ] || git clone -q --depth 1 --branch "$IN_REF" https://github.com/fredyk/sond-distro-pkg "$d"
+        sondpkg=("python3" "$d/sondpkg/bin/sondpkg")
+
+        umask 077
+        secrets=$(mktemp -d "$RUNNER_TEMP/sond-publish.XXXXXX")
+        trap 'rm -f "$secrets/token" "$secrets/key"; rmdir "$secrets"' EXIT
+        printf '%s' "$SOND_PUBLISH_TOKEN" >"$secrets/token"
+        printf '%s\n' "$SOND_SIGNING_KEY" >"$secrets/key"
+        unset SOND_PUBLISH_TOKEN SOND_SIGNING_KEY
+
+        rc=0
+        "${sondpkg[@]}" publish "$IN_BUNDLE" --url "$IN_URL" --token-file "$secrets/token" --key-file "$secrets/key" >"$secrets/out" || rc=$?
+        case $rc in
+        0) ;;
+        3) echo "::notice::this name and version are already published with the same object" ;;
+        *) exit "$rc" ;;
+        esac
+        cat "$secrets/out" >>"$GITHUB_OUTPUT"
+        rm -f "$secrets/out"
+
+        "${sondpkg[@]}" verify-published "$IN_BUNDLE" --url "$IN_URL"
