@@ -8,6 +8,12 @@ inputs:
   bundle:
     description: Path of the bundle directory (the bundle output of fredyk/sond-build-action).
     required: true
+  source-bundle:
+    description: >-
+      Path of the package's corresponding source bundle (the source_bundle output of
+      fredyk/sond-build-action, set for copyleft packages). Published and verified before the
+      package, whose manifest names it in source_object.
+    default: ""
   token:
     description: Publish token of the registry, scoped to this package (pass it from a secret).
     required: true
@@ -42,6 +48,7 @@ runs:
       shell: bash
       env:
         IN_BUNDLE: ${{ inputs.bundle }}
+        IN_SOURCE_BUNDLE: ${{ inputs.source-bundle }}
         IN_URL: ${{ inputs.url }}
         IN_REF: ${{ inputs.distro-pkg-ref }}
         IN_LOG_KEY: ${{ inputs.log-key }}
@@ -59,6 +66,18 @@ runs:
         printf '%s' "$SOND_PUBLISH_TOKEN" >"$secrets/token"
         printf '%s\n' "$SOND_SIGNING_KEY" >"$secrets/key"
         unset SOND_PUBLISH_TOKEN SOND_SIGNING_KEY
+
+        # A copyleft package goes out only after its corresponding source.
+        if [ -n "$IN_SOURCE_BUNDLE" ]; then
+          rc=0
+          "${sondpkg[@]}" publish "$IN_SOURCE_BUNDLE" --url "$IN_URL" --token-file "$secrets/token" --key-file "$secrets/key" >&2 || rc=$?
+          case $rc in
+          0) ;;
+          3) echo "::notice::the source bundle is already published with the same object" ;;
+          *) exit "$rc" ;;
+          esac
+          "${sondpkg[@]}" verify-published "$IN_SOURCE_BUNDLE" --url "$IN_URL" --log-key "$IN_LOG_KEY"
+        fi
 
         rc=0
         "${sondpkg[@]}" publish "$IN_BUNDLE" --url "$IN_URL" --token-file "$secrets/token" --key-file "$secrets/key" >"$secrets/out" || rc=$?

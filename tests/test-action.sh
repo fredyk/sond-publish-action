@@ -60,6 +60,39 @@ with tempfile.TemporaryDirectory() as tmp:
     left = [n for n in os.listdir(tmp) if n.startswith("sond-publish.")]
     check(not left, f"no secrets directory is left after a failure (left {left})")
     check("rmdir" not in p.stderr, "the clean-up itself does not fail")
+
+# The source lane: a source-bundle, when given, is published and verified before the package
+# (the registry client refuses a package whose source is not logged yet); its lines do not
+# become the step outputs.
+check("source-bundle" in inputs and inputs["source-bundle"].get("required") is not True, "input source-bundle (optional)")
+check((pub.get("env") or {}).get("IN_SOURCE_BUNDLE") == "${{ inputs.source-bundle }}", "source-bundle reaches the step through env")
+def run_with(source_bundle, exit_code=0):
+    with tempfile.TemporaryDirectory() as tmp:
+        d = os.path.join(tmp, "sond", "sond-distro-pkg")
+        os.makedirs(os.path.join(d, ".git")); os.makedirs(os.path.join(d, "sondpkg", "bin"))
+        calls = os.path.join(tmp, "calls")
+        with open(os.path.join(d, "sondpkg", "bin", "sondpkg"), "w") as f:
+            f.write("import sys\nopen(%r, 'a').write(' '.join(sys.argv[1:3]) + '\\n')\n"
+                    "print('object=sha256:' + sys.argv[2])\nsys.exit(%d if sys.argv[1] == 'publish' else 0)\n" % (calls, exit_code))
+        env = dict(os.environ, RUNNER_TEMP=tmp, IN_BUNDLE="bin", IN_SOURCE_BUNDLE=source_bundle, IN_URL="http://127.0.0.1:1",
+                   IN_REF="main", IN_LOG_KEY="0" * 64, SOND_PUBLISH_TOKEN="tok", SOND_SIGNING_KEY="key",
+                   GITHUB_OUTPUT=os.path.join(tmp, "out"))
+        p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", r],
+                           env=env, capture_output=True, text=True)
+        out = open(env["GITHUB_OUTPUT"]).read() if os.path.exists(env["GITHUB_OUTPUT"]) else ""
+        return p.returncode, open(calls).read().split("\n")[:-1] if os.path.exists(calls) else [], out
+rc, calls, out = run_with("src")
+check(rc == 0, f"a package with its source publishes (rc {rc})")
+check(calls == ["publish src", "verify-published src", "publish bin", "verify-published bin"],
+      f"the source is published and verified first ({calls})")
+check(out == "object=sha256:bin\n", f"only the package's lines are outputs ({out!r})")
+rc, calls, out = run_with("")
+check(calls == ["publish bin", "verify-published bin"], f"without a source bundle only the package is published ({calls})")
+rc, calls, out = run_with("src", exit_code=3)
+check(rc == 0 and calls[:2] == ["publish src", "verify-published src"], f"an already logged source is not a failure ({rc}, {calls})")
+rc, calls, out = run_with("src", exit_code=1)
+check(rc == 1 and calls == ["publish src"], f"a failed source publish stops before the package ({rc}, {calls})")
+
 print("test-action: " + ("FAIL" if fail else "OK"))
 sys.exit(fail)
 PY

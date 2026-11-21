@@ -37,6 +37,7 @@ already published is never repointed to another object.
 | input | required | default | meaning |
 |---|---|---|---|
 | `bundle` | yes | | bundle directory from sond-build-action |
+| `source-bundle` | no | | the `source_bundle` output of sond-build-action (copyleft packages): published and verified before `bundle` |
 | `token` | yes | | registry publish token, scoped to this package |
 | `signing-key` | yes | | private key file written by `sondpkg keygen` |
 | `url` | no | `https://dist.sond.dev` | registry base URL |
