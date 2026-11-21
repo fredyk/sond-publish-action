@@ -29,7 +29,7 @@ check(not any("${{" in r for r in runs), "no ${{ }} expression inside any run: (
 pub = next((s for s in steps if s.get("id") == "publish"), {})
 r = pub.get("run", "")
 check("umask 077" in r, "the secrets are written with umask 077")
-check("trap" in r and "rm -f" in r, "the secret files are removed on exit")
+check("trap" in r and 'rm -rf -- "$secrets"' in r, "the secrets directory is removed on exit")
 check(re.search(r"sondpkg(\[@\]\})?\"? publish ", r) is not None, "the step runs sondpkg publish")
 check(re.search(r'>>\s*"\$GITHUB_OUTPUT"', r) is not None, "publish's stdout becomes the step outputs")
 check(re.search(r"\b3\)", r) is not None or "-eq 3" in r or "= 3" in r, "exit 3 (already published) is accepted")
@@ -42,6 +42,24 @@ for o in ["object", "log_index", "tree_size"]:
     check(outs.get(o, {}).get("value") == "${{ steps.publish.outputs.%s }}" % o, f"output {o} from the publish step")
 env = pub.get("env") or {}
 check(any("inputs.token" in str(v) for v in env.values()) and any("inputs.signing-key" in str(v) for v in env.values()), "token and key reach the step through env")
+
+# Behaviour: the step runs against a fake sondpkg that fails; the failure comes back as the
+# step's exit code and no secret is left on disk.
+import os, subprocess, tempfile
+with tempfile.TemporaryDirectory() as tmp:
+    d = os.path.join(tmp, "sond", "sond-distro-pkg")
+    os.makedirs(os.path.join(d, ".git")); os.makedirs(os.path.join(d, "sondpkg", "bin"))
+    with open(os.path.join(d, "sondpkg", "bin", "sondpkg"), "w") as f:
+        f.write("import sys\nprint('object=x')\nsys.exit(1)\n")
+    env = dict(os.environ, RUNNER_TEMP=tmp, IN_BUNDLE="b", IN_URL="http://127.0.0.1:1", IN_REF="main",
+               IN_LOG_KEY="0" * 64, SOND_PUBLISH_TOKEN="tok", SOND_SIGNING_KEY="key",
+               GITHUB_OUTPUT=os.path.join(tmp, "out"))
+    p = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", r],
+                       env=env, capture_output=True, text=True)
+    check(p.returncode == 1, f"a failed publish fails the step with its exit code (got {p.returncode})")
+    left = [n for n in os.listdir(tmp) if n.startswith("sond-publish.")]
+    check(not left, f"no secrets directory is left after a failure (left {left})")
+    check("rmdir" not in p.stderr, "the clean-up itself does not fail")
 print("test-action: " + ("FAIL" if fail else "OK"))
 sys.exit(fail)
 PY

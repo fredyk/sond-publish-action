@@ -55,7 +55,7 @@ runs:
 
         umask 077
         secrets=$(mktemp -d "$RUNNER_TEMP/sond-publish.XXXXXX")
-        trap 'rm -f "$secrets/token" "$secrets/key"; rmdir "$secrets"' EXIT
+        trap 'rm -rf -- "$secrets"' EXIT
         printf '%s' "$SOND_PUBLISH_TOKEN" >"$secrets/token"
         printf '%s\n' "$SOND_SIGNING_KEY" >"$secrets/key"
         unset SOND_PUBLISH_TOKEN SOND_SIGNING_KEY
